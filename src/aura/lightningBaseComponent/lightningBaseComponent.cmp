@@ -1,0 +1,8 @@
+<!--
+ - Created by 4an70 on 1/21/2019.
+ -->
+
+<aura:component description="lightningBaseComponent" extensible="true" abstract="true">
+    <ltng:require scripts="{!$Resource.FileSaver}"/>
+    {!v.body}
+</aura:component>
