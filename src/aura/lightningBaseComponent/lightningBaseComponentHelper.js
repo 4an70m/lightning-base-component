@@ -1,9 +1,8 @@
-/**
- * Created by 4an70 on 1/21/2019.
- */
 ({
-    /* Toast helpers */
-    notification: function() {
+
+    /*Toast helpers*/
+    notification: function () {
+
         return {
 
             shortToastShowTime: 4000,
@@ -67,40 +66,66 @@
                     message
                 );
             }
-        };
+        }
     },
 
     /* Libraries getter */
-    libraries: function() {
+    libraries: function () {
 
         const helper = this;
 
-        return {
-            getNotifyLibrary(cmp) {
-                const notifyLibrary = cmp.find("notifyLib");
-                const lightningPromise = helper.server().getLightningPromise();
+        const hasLibrary = (cmp, libraryName) => {
+            const library = cmp.find(libraryName);
+            return !$A.util.isUndefinedOrNull(library);
+        };
 
-                if (!$A.util.isUndefinedOrNull(notifyLibrary)) {
-                    return new lightningPromise((resolve, reject) => {
-                        resolve(notifyLibrary);
-                    });
-                }
-                return helper.component().create(
-                    "lightning:notificationsLibrary",
-                    {"aura:id": "notifyLib"}
-                ).then(notifyLibComponent => {
-                    notifyLibComponent = notifyLibComponent[0];
+        const getLibrary = (cmp, libraryName) => {
+            const library = cmp.find(libraryName);
+            const lightningPromise = helper.server().getLightningPromise();
+            return new lightningPromise(resolve => {
+                resolve(library);
+            });
+        };
+
+        const createLibrary = (cmp, libraryName, params) => {
+            const lightningPromise = helper.server().getLightningPromise();
+            return helper.component().create(libraryName, params)
+                .then(library => {
+                    library = library[0];
                     let body = cmp.get("v.body");
                     if ($A.util.isUndefinedOrNull(body)) {
                         body = [];
                     }
-                    body.push(notifyLibComponent);
+                    body.push(library);
                     cmp.set("v.body", body);
                     return new lightningPromise((resolve, reject) => {
-                        resolve(notifyLibComponent);
+                        resolve(library);
                     });
                 });
+        };
 
+        return {
+
+            getNotifyLibrary(cmp, libraryIdName) {
+                libraryIdName = libraryIdName || "notifyLib";
+                if (hasLibrary(cmp, libraryIdName)) {
+                    return getLibrary(cmp, libraryIdName)
+                }
+                return createLibrary(cmp,
+                    "lightning:notificationsLibrary",
+                    {"aura:id": libraryIdName}
+                );
+            },
+
+            getNavigationLibrary(cmp, libraryIdName) {
+                libraryIdName = libraryIdName || "navigationLib";
+                if (hasLibrary(cmp, libraryIdName)) {
+                    return getLibrary(cmp, libraryIdName)
+                }
+                return createLibrary(cmp,
+                    "lightning:navigation",
+                    {"aura:id": libraryIdName}
+                );
             }
         }
     },
@@ -109,6 +134,18 @@
     server: function () {
 
         const helper = this;
+
+        const getAction = (cmp, actionName, params) => {
+            if (actionName.indexOf("c.") <= -1) {
+                actionName = "c." + actionName;
+            }
+
+            const action = cmp.get(actionName);
+            if (!$A.util.isUndefinedOrNull(params)) {
+                action.setParams(params);
+            }
+            return action;
+        };
 
         return {
 
@@ -140,18 +177,10 @@
                 }
             },
 
-            execute(cmp, actionName, params) {
-                if (actionName.indexOf("c.") <= -1) {
-                    actionName = "c." + actionName;
-                }
-
+            executePromise(cmp, actionName, params) {
+                const action = getAction(cmp, actionName, params);
                 const lightningPromise = this.getLightningPromise();
                 return new lightningPromise((resolve, reject) => {
-                    const action = cmp.get(actionName);
-                    if (!$A.util.isUndefinedOrNull(params)) {
-                        action.setParams(params);
-                    }
-
                     action.setCallback(this, result => {
                         let state = result.getState();
                         if (state === "SUCCESS") {
@@ -164,6 +193,26 @@
                 });
             },
 
+            execute(cmp, actionName, params, successCallback, errorCallback, finallyCallback) {
+                const action = getAction(cmp, actionName, params);
+                action.setCallback(this, result => {
+                    let state = result.getState();
+                    if (state === "SUCCESS") {
+                        if (!$A.util.isUndefinedOrNull(successCallback)) {
+                            successCallback(result.getReturnValue());
+                        }
+                    } else {
+                        if (!$A.util.isUndefinedOrNull(errorCallback)) {
+                            errorCallback(result);
+                        }
+                    }
+                    if (!$A.util.isUndefinedOrNull(finallyCallback)) {
+                        finallyCallback();
+                    }
+                });
+                $A.enqueueAction(action);
+            },
+
             showQuickErrorToast(response) {
                 const message = this.parseMessage(response);
                 helper.notification().showQuickErrorToast(message);
@@ -174,7 +223,7 @@
                 helper.notification().showLongErrorToast(message)
             },
 
-            parseMessage: function(response) {
+            parseMessage: function (response) {
                 if (typeof response === 'string') {
                     return response;
                 }
@@ -190,15 +239,66 @@
                 }
                 return message;
             },
-        };
+        }
     },
 
-    /* Component creation utilities */
-    component: function() {
+    /* File interaction utilities */
+    file: function () {
 
         const helper = this;
 
         return {
+
+            download(base64file, fileName) {
+                const a = document.createElement("a");
+                a.href = window.URL.createObjectURL(this.base64ToBlob(base64file));
+                a.download = fileName;
+                a.rel = "noopener";
+                a.target = '_blank';
+                a.click();
+            },
+
+            base64ToBlob(b64Data) {
+                let sliceSize = 512;
+                let byteCharacters = atob(b64Data);
+                let byteArrays = [];
+                for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                    let slice = byteCharacters.slice(offset, offset + sliceSize);
+                    let byteNumbers = new Array(slice.length);
+                    for (var i = 0; i < slice.length; i++) {
+                        byteNumbers[i] = slice.charCodeAt(i);
+                    }
+                    let byteArray = new Uint8Array(byteNumbers);
+                    byteArrays.push(byteArray);
+                }
+                return new Blob(byteArrays, {type: "application/octet-stream"});
+            },
+
+            blobToBase64(blob) {
+                const lightningPromise = helper.getLightningPromise();
+                return new lightningPromise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(blob);
+                    reader.onloadend = (event) => {
+                        const error = event.target.error;
+                        if (!$A.util.isUndefinedOrNull(error)) {
+                            reject(error);
+                            return;
+                        }
+                        resolve(event.target.result);
+                    };
+                });
+            },
+        }
+    },
+
+    /* Component creation utilities */
+    component: function () {
+
+        const helper = this;
+
+        return {
+
             create(params) {
                 if (!$A.util.isArray(params)) {
                     params = [[params, arguments[1]]];
@@ -214,6 +314,56 @@
                     });
                 });
             },
-        };
+        }
+    },
+
+    /* Utilities */
+    util: function () {
+
+        return {
+
+            flatten: function (array) {
+                const flattenObject = function (object) {
+                    const result = {};
+                    for (const prop in object) {
+                        if (!object.hasOwnProperty(prop)) continue;
+                        if ((typeof object[prop]) === "object") {
+                            const flatObject = this.flatten(object[prop]);
+                            for (const x in flatObject) {
+                                if (!flatObject.hasOwnProperty(x)) continue;
+                                result[prop + '.' + x] = flatObject[x];
+                            }
+                        } else {
+                            result[prop] = object[prop];
+                        }
+                    }
+                    return result;
+                }
+
+                if (!$A.util.isArray(array)) {
+                    return flattenObject(array);
+                }
+
+                return array.map(item => {
+                    return flattenObject(item);
+                });
+            },
+
+            hash: function (obj) {
+                const stringObj = JSON.stringify(obj);
+                let hash = 0, i, chr;
+                if (stringObj.length === 0) return hash;
+                for (let i = 0; i < stringObj.length; i++) {
+                    chr = stringObj.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + chr;
+                    hash |= 0; // Convert to 32bit integer
+                }
+                return hash;
+            },
+
+            clone: function (object) {
+                return JSON.parse(JSON.stringify(object));
+            }
+        }
     }
 })

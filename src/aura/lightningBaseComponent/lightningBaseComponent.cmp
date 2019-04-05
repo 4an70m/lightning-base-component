@@ -3,6 +3,5 @@
  -->
 
 <aura:component description="lightningBaseComponent" extensible="true" abstract="true">
-    <ltng:require scripts="{!$Resource.FileSaver}"/>
     {!v.body}
 </aura:component>
